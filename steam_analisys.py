@@ -17,8 +17,9 @@ st.write("Dashboard avanzado con filtros dinámicos, análisis y visualizaciones
 PARQUET_PATH = "games.parquet"
 
 # ============================
-# CARGA DEL CSV
+# CARGA DEL PARQUET
 # ============================
+@st.cache_data
 def load_and_clean_data():
     df = pd.read_parquet(PARQUET_PATH)
     
