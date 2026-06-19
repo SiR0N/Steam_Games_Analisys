@@ -1,6 +1,6 @@
 venv/
 __pycache__/
 *.csv
-*.ipynb
+#*.ipynb
 .devcontainer/
 .dockerignore

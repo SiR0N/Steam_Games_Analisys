@@ -11,84 +11,25 @@ import os
 # CONFIGURACIÓN INICIAL
 # ============================
 st.set_page_config(page_title="Steam Games Dashboard", layout="wide")
-st.title("🎮 Steam Games Dashboard")
+st.title("GameDev Strategy Lab 🚀")
 st.write("Dashboard avanzado con filtros dinámicos, análisis y visualizaciones interactivas.")
-
+st.markdown("""
+### ¿Cómo usar esta herramienta?
+Este panel está diseñado para reducir la incertidumbre en el desarrollo de videojuegos. Analizamos el mercado de Steam para ayudarte a responder tres preguntas críticas:
+1. **¿Qué género tiene mejor recepción?** (Aceptación de usuarios)
+2. **¿Cuál es el mercado actual?** (Viabilidad económica)
+3. **¿Que plataformas son las mas utilizadas ?**
+""")
 PARQUET_PATH = "games.parquet"
 
 # ============================
 # CARGA DEL PARQUET
 # ============================
-@st.cache_data
-def load_and_clean_data():
-    df = pd.read_parquet(PARQUET_PATH)
-    
-    # 1. Definir lista negra aquí mismo para tenerla a mano
-    LISTA_NEGRA = [
-        "Web Publishing", "Animation & Modeling", "Education", "Software Training", 
-        "Accounting", "Video Production", "Utilities", "Audio Production", 
-        "Design & Illustration", "Photo Editing", "Game Development", "Software"
-    ]
-    
-    df["Release_date"] = pd.to_datetime(df["Release_date"], errors="coerce")
-    df["Year"] = df["Release_date"].dt.year
-    df["Positive"] = pd.to_numeric(df["Positive"], errors="coerce").fillna(0)
-    df["Negative"] = pd.to_numeric(df["Negative"], errors="coerce").fillna(0)
-    df["Total_Reviews"] = df["Positive"] + df["Negative"]
-    df["Aceptacion_Real"] = (df["Positive"] / df["Total_Reviews"] * 100).fillna(0)
-    
-    df["Median_playtime_forever"] = pd.to_numeric(df["Median_playtime_forever"], errors="coerce").fillna(0)
-    df["Median_playtime_2weeks"] = pd.to_numeric(df["Median_playtime_2weeks"], errors="coerce").fillna(0)
-    
-    # 2. Limpieza de Géneros (Procesamos primero)
-# 2. Función de limpieza que filtra la lista al vuelo
-    def procesar_generos_limpios(x):
-        if pd.isna(x): return []
-        # Limpia espacios Y elimina los que están en la lista negra
-        return [g.strip() for g in str(x).split(",") if g.strip() and g.strip() not in LISTA_NEGRA]
-    
-    df["Genres_list"] = df["Genres"].apply(procesar_generos_limpios)
-    
-    # 3. Ahora el Género Principal ya no puede ser software
-    df["Genero_Principal"] = df["Genres_list"].apply(lambda x: x[0] if x else "Otros")
-    
-    # 4. Filtro de filas (opcional, pero recomendado)
-    df = df[df["Genres_list"].apply(len) > 0]
-    
-    # 3. FILTRADO GLOBAL: Eliminamos software y basura de un solo golpe
-    df = df[~df["Genero_Principal"].isin(LISTA_NEGRA)]
-    df = df[(df["Total_Reviews"] > 0) | (df["Median_playtime_forever"] > 0)]
-    
-    # Limpiar Estimated_owners (convertir rango a valor numérico conservador)
-    def extraer_min_owners(x):
-        if pd.isna(x) or str(x) == '0 - 0': return 0
-        try: return float(str(x).split('-')[0].strip())
-        except: return 0
+def load_clean_data():
+    # Streamlit solo lee el archivo ya procesado, no tiene que calcular nada
+    return pd.read_parquet("games.parquet")
 
-        # Asegurar que el precio es float limpio
-    df["Price"] = pd.to_numeric(df["Price"], errors="coerce").fillna(0)
-    # Crear una bandera para diferenciar F2P fácilmente en tus gráficas
-    df["Is_Free"] = df["Price"] == 0
-
-
-    # Limpieza básica para evitar duplicados en filtros
-    df["Developers"] = df["Developers"].fillna("Unknown").str.strip()
-    df["Publishers"] = df["Publishers"].fillna("Unknown").str.strip()
-
-    # Si hay duplicados, nos quedamos con la última entrada (o la que tenga más reviews)
-    df = df.sort_values("Total_Reviews", ascending=False).drop_duplicates(subset="Appid", keep="first")
-
-    df["Estimated_owners_min"] = df["Estimated_owners"].apply(extraer_min_owners)
-    
-    # Cálculos de negocio (Hecho una vez aquí)
-    df["Mercado_Estimado"] = df["Estimated_owners_min"] * df["Price"]
-    
-    df["Tag_List"] = df["Tags"].apply(lambda x: [t.strip() for t in str(x).split(",")] if pd.notna(x) else [])
-    
-    return df
-
-df = load_and_clean_data()
-
+df = load_clean_data()
 # ============================
 # FILTROS DINÁMICOS
 # ============================
@@ -134,6 +75,25 @@ filtered_df = filtered_df[(filtered_df["Price"] >= price_range[0]) & (filtered_d
 st.subheader(f"📊 Resultados filtrados: {len(filtered_df)} juegos")
 st.dataframe(filtered_df.head(50), use_container_width=True)
 
+
+# ============================
+# GRÁFICA 4 — Lanzamientos por año
+# ============================
+st.subheader("📅 Lanzamientos por año")
+year_counts = filtered_df["Year"].value_counts().sort_index()
+fig4 = px.line(
+    x=year_counts.index,
+    y=year_counts.values,
+    markers=True,
+    title="Número de lanzamientos por año"
+)
+st.plotly_chart(fig4, use_container_width=True)
+
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
 
 # ============================
 # GRÁFICA 1 — Distribución de precios (Optimizada)
@@ -280,185 +240,125 @@ with col2:
         st.write("No hay datos para el año seleccionado.")
 
 # ============================
-# GRÁFICA 3 — Precio vs Reseñas positivas (Optimizada)
+# GRÁFICA 3 — Precio vs Reseñas positivas (Enfoque en Género Principal)
 # ============================
-st.subheader("⭐ Precio vs Reseñas positivas")
+st.subheader("⭐ Precio vs Reseñas positivas por Género Principal")
 
 if not filtered_df.empty:
     fig3 = px.scatter(
         filtered_df,
         x="Price",
         y="Positive",
-        color="Year", # Añade color por año para darle más vida y analítica
+        color="Genero_Principal", # Usamos tu columna limpia
         hover_data=["Name", "Developers"],
-        opacity=0.6,
-        title="Relación Precio vs Reseñas Positivas (Vista Enfocada)",
+        opacity=0.7,
+        title="¿Qué géneros tienen mejor acogida según su precio?",
         template="plotly_dark",
         labels={
             "Price": "Precio (€)",
             "Positive": "Reseñas Positivas",
-            "Year": "Año"
-        },
-        color_continuous_scale=px.colors.sequential.Viridis
+            "Genero_Principal": "Género Principal" 
+        }
     )
 
-    # --- EL TRUCO PARA ELIMINAR LOS OUTLIERS VISUALMENTE ---
+    # Lógica de límites (se mantiene igual)
     max_price_actual = filtered_df["Price"].max()
     max_pos_actual = filtered_df["Positive"].max()
 
-    # Si hay juegos que superan los 100€, recortamos el eje X para que no se comprima
     limite_x = 100 if max_price_actual > 100 else max_price_actual
-    
-    # Si hay super-hits (como CS:GO/Dota) que pasan de 200k reseñas, recortamos el eje Y 
-    # para poder ver la distribución de los juegos normales
     limite_y = 200000 if max_pos_actual > 200000 else max_pos_actual
 
     fig3.update_layout(
         xaxis_range=[0, limite_x],
-        yaxis_range=[0, limite_y]
+        yaxis_range=[0, limite_y],
+        # La leyenda a la derecha es mejor si tienes muchos géneros, 
+        # pero si es muy larga, usa la opción 'h' (horizontal) que te puse antes
+        legend=dict(title="Géneros")
     )
 
-    # Mejorar el tamaño de los puntos para que se aprecien mejor
     fig3.update_traces(marker=dict(size=6))
 
     st.plotly_chart(fig3, use_container_width=True)
 else:
     st.info("No hay datos disponibles para los filtros seleccionados.")
 
-# ============================
-# GRÁFICA 4 — Lanzamientos por año
-# ============================
-st.subheader("📅 Lanzamientos por año")
-year_counts = filtered_df["Year"].value_counts().sort_index()
-fig4 = px.line(
-    x=year_counts.index,
-    y=year_counts.values,
-    markers=True,
-    title="Número de lanzamientos por año"
-)
-st.plotly_chart(fig4, use_container_width=True)
-
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
-
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
 
 # ==============================================================================
-# GRÁFICA 5 — Versión Ultra-Fluida (Rendimiento optimizado con WebGL)
+# GRÁFICA: Comparativa de Tiempos de Juego vs Precio (Versión Final Corregida)
 # ==============================================================================
 st.subheader("⏳ Comparativa de Tiempos de Juego vs Precio")
-st.write("Análisis sincronizado de alto rendimiento utilizando aceleración por hardware (WebGL).")
 
 if not filtered_df.empty:
-    # 1. Preparar y limpiar los datos de tiempo (Pasar de minutos a horas)
-    df_tiempos = filtered_df.copy()
-    df_tiempos["Horas_Mediana_Total"] = df_tiempos["Median_playtime_forever"] / 60
-    df_tiempos["Horas_Promedio_Total"] = df_tiempos["Average_playtime_forever"] / 60
-    df_tiempos["Horas_Mediana_2Semanas"] = df_tiempos["Median_playtime_2weeks"] / 60
-
-    # 2. Identificar los 5 géneros más comunes actuales
-    df_exploded_temp = df_tiempos.explode("Genres_list")
-    top_5_generos = df_exploded_temp["Genres_list"].value_counts().head(5).index.tolist()
-
-    # 3. Clasificación Top 5 + Otros
-    def asignar_genero_principal(lista_generos):
-        if not isinstance(lista_generos, list) or len(lista_generos) == 0:
-            return "Otros"
-        for g in lista_generos:
-            if g in top_5_generos:
-                return g
-        return "Otros"
-
-    df_tiempos["Genero_Principal"] = df_tiempos["Genres_list"].apply(asignar_genero_principal)
+    # 1. Limpieza de Outliers (Percentil 99)
+    p99_mediana = filtered_df["Median_playtime_forever"].quantile(0.99)
+    p99_promedio = filtered_df["Average_playtime_forever"].quantile(0.99)
+    p99_2weeks = filtered_df["Median_playtime_2weeks"].quantile(0.99)
+    p99_precio = filtered_df["Price"].quantile(0.99)
     
-    categorias_genero = top_5_generos + ["Otros"]
-    colores_pastel = px.colors.qualitative.Pastel[:len(categorias_genero)]
-    mapa_colores = dict(zip(categorias_genero, colores_pastel))
+    # 2. Definir categorías y colores
+    categorias = sorted(filtered_df["Genero_Principal"].unique())
+    colores = px.colors.qualitative.Pastel[:len(categorias)]
+    mapa_colores = dict(zip(categorias, colores))
 
-    # 4. Definir límites dinámicos de Outliers
-    max_price_actual = df_tiempos["Price"].max()
-    limite_x = 100 if max_price_actual > 100 else max_price_actual
-
-    # 5. CREAR LA ESTRUCTURA DE SUBPLOTS
+    # 3. Crear estructura de subplots
     fig_global = make_subplots(
         rows=1, cols=3,
-        subplot_titles=("Mediana de Juego Total", "Promedio de Juego Total", "Mediana (Últimas 2 Semanas)"),
-        horizontal_spacing=0.05
+        subplot_titles=("Mediana (Total)", "Promedio (Total)", "Mediana (2 Semanas)"),
+        horizontal_spacing=0.08
     )
 
-    # 6. ENROUTAR LOS DATOS POR GÉNERO (Usando WebGL via Scattergl)
-    for gen in categorias_genero:
-        df_sub = df_tiempos[df_tiempos["Genero_Principal"] == gen]
+    # 4. Dibujar trazas
+    columnas_y = ["Median_playtime_forever", "Average_playtime_forever", "Median_playtime_2weeks"]
+    limites_y = [p99_mediana / 60, p99_promedio / 60, p99_2weeks / 60]
+
+    for gen in categorias:
+        df_sub = filtered_df[filtered_df["Genero_Principal"] == gen]
+        if df_sub.empty: continue
+            
+        color = mapa_colores.get(gen, "#FFFFFF")
         
-        if not df_sub.empty:
-            color_asignado = mapa_colores[gen]
-
-            # --- SUBTRAMA 1 (Mediana Total) ---
+        for i, col_y in enumerate(columnas_y, 1):
             fig_global.add_trace(
-                go.Scattergl( # <--- CAMBIO CLAVE: Usamos aceleración por hardware
-                    x=df_sub["Price"], y=df_sub["Horas_Mediana_Total"],
-                    mode="markers", name=gen, legendgroup=gen,
-                    marker=dict(size=5, color=color_asignado, line=dict(width=0.3, color="white")),
-                    hovertext=df_sub["Name"],
-                    hovertemplate="<b>%{hovertext}</b><br>Precio: %{x}€<br>Horas: %{y:.1f}<extra></extra>",
-                    showlegend=True
+                go.Scattergl(
+                    x=df_sub["Price"], 
+                    y=df_sub[col_y] / 60,
+                    mode="markers", 
+                    name=gen, 
+                    legendgroup=gen,
+                    # El tamaño aquí inicializa la traza
+                    marker=dict(size=8, color=color), 
+                    showlegend=(i == 1),
+                    hovertemplate="<b>%{text}</b><br>Precio: %{x}€<br>Horas: %{y:.1f}<extra></extra>",
+                    text=df_sub["Name"]
                 ),
-                row=1, col=1
+                row=1, col=i
             )
 
-            # --- SUBTRAMA 2 (Promedio Total) ---
-            fig_global.add_trace(
-                go.Scattergl( # <--- CAMBIO CLAVE
-                    x=df_sub["Price"], y=df_sub["Horas_Promedio_Total"],
-                    mode="markers", name=gen, legendgroup=gen,
-                    marker=dict(size=5, color=color_asignado, line=dict(width=0.3, color="white")),
-                    hovertext=df_sub["Name"],
-                    hovertemplate="<b>%{hovertext}</b><br>Precio: %{x}€<br>Horas: %{y:.1f}<extra></extra>",
-                    showlegend=False
-                ),
-                row=1, col=2
-            )
-
-            # --- SUBTRAMA 3 (Mediana 2 Semanas) ---
-            fig_global.add_trace(
-                go.Scattergl( # <--- CAMBIO CLAVE
-                    x=df_sub["Price"], y=df_sub["Horas_Mediana_2Semanas"],
-                    mode="markers", name=gen, legendgroup=gen,
-                    marker=dict(size=5, color=color_asignado, line=dict(width=0.3, color="white")),
-                    hovertext=df_sub["Name"],
-                    hovertemplate="<b>%{hovertext}</b><br>Precio: %{x}€<br>Horas: %{y:.1f}<extra></extra>",
-                    showlegend=False
-                ),
-                row=1, col=3
-            )
-
-    # 7. AJUSTES FINALES DE DISEÑO
-    max_h1 = df_tiempos["Horas_Mediana_Total"].max()
-    max_h2 = df_tiempos["Horas_Promedio_Total"].max()
-    max_h3 = df_tiempos["Horas_Mediana_2Semanas"].max()
-
+    # 5. Ajustes finales de DISEÑO
     fig_global.update_layout(
         template="plotly_dark",
-        height=480,
-        margin=dict(l=20, r=20, t=50, b=50),
-        legend=dict(traceorder="normal", itemclick="toggle", itemdoubleclick="toggleothers")
+        height=550,
+        margin=dict(l=20, r=20, t=50, b=120),
+        legend=dict(
+            orientation="h", 
+            yanchor="top", 
+            y=-0.45,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=14, color="white"),
+            itemsizing="constant" # Esto hace que los iconos de la leyenda sean grandes
+        )
     )
-
-    # Límites de visualización independientes
-    fig_global.update_xaxes(title_text="Precio (€)", range=[0, limite_x], row=1, col=1)
-    fig_global.update_yaxes(title_text="Horas", range=[0, 200 if max_h1 > 200 else max_h1], row=1, col=1)
-
-    fig_global.update_xaxes(title_text="Precio (€)", range=[0, limite_x], row=1, col=2)
-    fig_global.update_yaxes(title_text="Horas", range=[0, 300 if max_h2 > 300 else max_h2], row=1, col=2)
-
-    fig_global.update_xaxes(title_text="Precio (€)", range=[0, limite_x], row=1, col=3)
-    fig_global.update_yaxes(title_text="Horas", range=[0, 40 if max_h3 > 40 else max_h3], row=1, col=3)
+    
+    # Aplicar límites de percentiles
+    for i in range(1, 4):
+        fig_global.update_xaxes(title_text="Precio (€)", range=[0, p99_precio], row=1, col=i)
+        fig_global.update_yaxes(title_text="Horas", range=[0, limites_y[i-1]], row=1, col=i)
 
     st.plotly_chart(fig_global, use_container_width=True)
-
 else:
-    st.info("No hay datos para mostrar con los filtros seleccionados.")
+    st.info("No hay datos para mostrar.")
+
 # ==============================================================================
 # GRÁFICA 6 — Mapa de calor de correlaciones (Versión Estática y Fluida)
 # ==============================================================================
@@ -509,115 +409,85 @@ else:
     st.info("No hay suficientes variables numéricas para calcular el mapa de calor.")
 
 
-# ==============================================================================
-# GRÁFICA 7 — ANÁLISIS DE RENDIMIENTO EN METACRITIC Y COMUNIDAD
-# ==============================================================================
+import streamlit as st
+import plotly.express as px
+import pandas as pd
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
 
-# 1. CONTROL DE FILTRO: Botones de Tramo de Precios
-# ==============================================================================
-if "Price" in filtered_df.columns:
-    st.write("### 💰 Selecciona el Tramo de Inversión / Precio")
+# 1. FUNCIÓN DE FILTRADO CON CACHÉ (CORREGIDA)
+@st.cache_data
+def get_filtered_data(df, opcion):
+    df_p = df.copy()
+    # Convertir columnas tipo lista a tupla para evitar el error de hashing
+    for col in df_p.columns:
+        if df_p[col].apply(lambda x: isinstance(x, list)).any():
+            df_p[col] = df_p[col].apply(lambda x: tuple(x) if isinstance(x, list) else x)
+            
+    if opcion == "Menos de 5€": df_p = df_p[df_p["Price"] < 5]
+    elif opcion == "5€ - 10€": df_p = df_p[(df_p["Price"] >= 5) & (df_p["Price"] < 10)]
+    elif opcion == "10€ - 20€": df_p = df_p[(df_p["Price"] >= 10) & (df_p["Price"] < 20)]
+    elif opcion == "20€ - 40€": df_p = df_p[(df_p["Price"] >= 20) & (df_p["Price"] < 40)]
+    elif opcion == "Más de 40€": df_p = df_p[df_p["Price"] >= 40]
+    return df_p
+
+# 2. CONTROL DE FILTRO
+st.write("### 💰 Selecciona el Tramo de Inversión / Precio")
 opcion_precio = st.radio(
     "Elige el rango de precio para analizar la competencia:",
     ["Todos", "Menos de 5€", "5€ - 10€", "10€ - 20€", "20€ - 40€", "Más de 40€"],
     horizontal=True
 )
 
-# Filtramos sobre el 'df' global que ya viene limpio de software y basura
-df_p = filtered_df.copy()
-if opcion_precio == "Menos de 5€": df_p = df_p[df_p["Price"] < 5]
-elif opcion_precio == "5€ - 10€": df_p = df_p[(df_p["Price"] >= 5) & (df_p["Price"] < 10)]
-elif opcion_precio == "10€ - 20€": df_p = df_p[(df_p["Price"] >= 10) & (df_p["Price"] < 20)]
-elif opcion_precio == "20€ - 40€": df_p = df_p[(df_p["Price"] >= 20) & (df_p["Price"] < 40)]
-elif opcion_precio == "Más de 40€": df_p = df_p[df_p["Price"] >= 40]
+df_p = get_filtered_data(filtered_df, opcion_precio)
 
 if not df_p.empty:
     df_p["Nombre_Con_Genero"] = df_p["Name"] + " (" + df_p["Genero_Principal"] + ")"
 
-    # --- GRÁFICA I: Géneros Amados (Recuperando el estilo) ---
+    # --- GRÁFICA I ---
     st.subheader("🔥 Géneros Más Amados")
-    df_exp = df_p.explode("Genres_list")
-    df_rank = df_exp.groupby("Genres_list").agg({"Aceptacion_Real": "mean", "Name": "count"}).rename(columns={"Name": "Total"})
-    df_rank = df_rank[df_rank["Total"] >= (5 if opcion_precio == "Más de 40€" else 10)]
-    
-    fig1 = px.bar(df_rank.sort_values("Aceptacion_Real"), x="Aceptacion_Real", y=df_rank.index, 
-                  color="Aceptacion_Real", color_continuous_scale="Plasma", orientation="h", 
-                  template="plotly_dark", text_auto=".1f")
-    fig1.update_layout(xaxis_range=[0, 100], yaxis={'categoryorder': 'total ascending'})
-    st.plotly_chart(fig1, use_container_width=True)
+    df_rank = df_p.groupby("Genero_Principal").agg({"Aceptacion_Real": "mean", "Name": "count"}).rename(columns={"Name": "Total"})
+    df_rank = df_rank[df_rank["Total"] >= (5 if opcion_precio == "Más de 40€" else 10)].sort_values("Aceptacion_Real", ascending=True)
+    fig1 = px.bar(df_rank, x="Aceptacion_Real", y=df_rank.index, color="Aceptacion_Real", color_continuous_scale="Plasma", orientation="h", template="plotly_dark", text_auto=".1f")
+    fig1.update_layout(xaxis_range=[0, 100], yaxis={'categoryorder': 'array', 'categoryarray': df_rank.index})
+    st.plotly_chart(fig1, width='stretch')
 
-    # --- GRÁFICA II: Favoritos (Estilo optimizado) ---
+    # --- GRÁFICA II ---
     st.subheader("🔥 Los Favoritos de la Comunidad")
     df_top = df_p[(df_p["Total_Reviews"] >= 500) & (df_p["Peak_ccu"] >= 100)].sort_values(by="Aceptacion_Real", ascending=False).head(20)
-    fig2 = px.bar(df_top, x="Aceptacion_Real", y="Nombre_Con_Genero", color="Total_Reviews", 
-                  color_continuous_scale="Plasma", orientation="h", template="plotly_dark", text_auto=".1f")
+    fig2 = px.bar(df_top, x="Aceptacion_Real", y="Nombre_Con_Genero", color="Total_Reviews", color_continuous_scale="Plasma", orientation="h", template="plotly_dark", text_auto=".1f")
     fig2.update_layout(xaxis_range=[95, 100.1], yaxis={'categoryorder': 'total ascending'}, height=650)
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width='stretch')
 
-    # --- GRÁFICA III: Metacritic (Estilo limpio) ---
+    # --- GRÁFICA III ---
     st.subheader("🏆 Top juegos por Metacritic")
     df_meta = df_p[df_p["Metacritic_score"] > 0].sort_values("Metacritic_score", ascending=False).head(20)
-    fig3 = px.bar(df_meta, x="Metacritic_score", y="Nombre_Con_Genero", color="Aceptacion_Real", 
-                  color_continuous_scale="Viridis", orientation="h", template="plotly_dark", text_auto=True)
+    fig3 = px.bar(df_meta, x="Metacritic_score", y="Nombre_Con_Genero", color="Aceptacion_Real", color_continuous_scale="Viridis", orientation="h", template="plotly_dark", text_auto=True)
     fig3.update_layout(xaxis_range=[0, 100], yaxis={'categoryorder': 'total ascending'}, height=650)
-    st.plotly_chart(fig3, use_container_width=True)
+    st.plotly_chart(fig3, width='stretch')
 
-    # --- GRÁFICA IV: Rentabilidad Género (Corrigiendo el comportamiento raro) ---
+    # --- GRÁFICA IV ---
     st.subheader("🏅 Rentabilidad por Género Puro")
-    # Para la gráfica IV, es mejor agrupar por Género Principal para que el eje Y no se vuelva loco
     df_g4 = df_p[df_p["Metacritic_score"] > 0].groupby("Genero_Principal").agg({"Metacritic_score": "mean", "Aceptacion_Real": "mean"}).reset_index()
-    fig4 = px.bar(df_g4, x="Metacritic_score", y="Genero_Principal", color="Aceptacion_Real", 
-                  color_continuous_scale="Viridis", orientation="h", template="plotly_dark", text_auto=".1f")
+    fig4 = px.bar(df_g4, x="Metacritic_score", y="Genero_Principal", color="Aceptacion_Real", color_continuous_scale="Viridis", orientation="h", template="plotly_dark", text_auto=".1f")
     fig4.update_layout(xaxis_range=[0, 100], yaxis={'categoryorder': 'total ascending'})
-    st.plotly_chart(fig4, use_container_width=True)
+    st.plotly_chart(fig4, width='stretch')
 
-# --- GRÁFICA VI: Matriz de Oportunidad (Aceptación vs. Mercado) ---
-st.subheader("🚀 Matriz de Oportunidad: Calidad vs. Tamaño de Mercado")
+    # --- GRÁFICA VI ---
+    st.subheader("🚀 Matriz de Oportunidad")
+    df_scatter = df_p.groupby("Genero_Principal").agg({"Aceptacion_Real": "mean", "Mercado_Estimado": "sum", "Name": "count"}).reset_index()
+    fig6 = px.scatter(df_scatter, x="Aceptacion_Real", y="Mercado_Estimado", size="Name", color="Genero_Principal", hover_name="Genero_Principal", size_max=60, template="plotly_dark", log_y=True)
+    fig6.add_vline(x=df_scatter["Aceptacion_Real"].mean(), line_dash="dash", line_color="white")
+    fig6.add_hline(y=df_scatter["Mercado_Estimado"].median(), line_dash="dash", line_color="white")
+    st.plotly_chart(fig6, width='stretch')
 
-# Agrupamos por género principal calculando la media de aceptación y la suma de mercado
-df_scatter = df_p.groupby("Genero_Principal").agg({
-    "Aceptacion_Real": "mean",
-    "Mercado_Estimado": "sum",
-    "Name": "count" # Para el tamaño de la burbuja
-}).reset_index()
-
-# Creamos el gráfico de dispersión
-fig6 = px.scatter(
-    df_scatter, 
-    x="Aceptacion_Real", 
-    y="Mercado_Estimado", 
-    size="Name", 
-    color="Genero_Principal",
-    hover_name="Genero_Principal",
-    size_max=60,
-    template="plotly_dark",
-    title="¿Dónde está la oportunidad? (Burbuja = Cantidad de juegos)",
-    log_y=True # Usamos escala logarítmica en Y porque las diferencias de mercado son gigantes
-)
-
-fig6.update_layout(
-    xaxis_title="Aceptación Media (%)",
-    yaxis_title="Mercado Estimado Total (€) (Log)",
-    showlegend=True
-)
-# Añadir esto a tu código de fig6
-fig6.add_vline(x=df_scatter["Aceptacion_Real"].mean(), line_dash="dash", line_color="white")
-fig6.add_hline(y=df_scatter["Mercado_Estimado"].median(), line_dash="dash", line_color="white")
-
-st.plotly_chart(fig6, use_container_width=True)
-
-st.subheader("📊 Mercado por Género")
-df_mercado = df_p.groupby("Genero_Principal")["Mercado_Estimado"].sum().reset_index()
-
-fig = px.treemap(
-    df_mercado, 
-    path=['Genero_Principal'], 
-    values='Mercado_Estimado',
-    color='Mercado_Estimado',
-    color_continuous_scale='Viridis',
-    template="plotly_dark"
-)
-st.plotly_chart(fig, use_container_width=True)
+    # --- TREEMAP ---
+    st.subheader("📊 Mercado por Género")
+    df_mercado = df_p.groupby("Genero_Principal")["Mercado_Estimado"].sum().reset_index()
+    fig_tree = px.treemap(df_mercado, path=['Genero_Principal'], values='Mercado_Estimado', color='Mercado_Estimado', color_continuous_scale='Viridis', template="plotly_dark")
+    st.plotly_chart(fig_tree, width='stretch')
+else:
+    st.warning("No hay datos para mostrar en este rango de precio.")
 
 # ============================
 # GRÁFICA 8 — Compatibilidad por plataforma
@@ -780,3 +650,31 @@ if game:
 
     st.write("Juegos recomendados:")
     st.dataframe(recs[["Name", "Genres", "Price", "Positive", "similarity_hybrid"]])
+
+st.markdown("---")
+
+
+st.header("🏁 Conclusiones Estratégicas: ¿Dónde invertir tu esfuerzo?")
+
+# Usamos columnas para organizar las conclusiones por temas
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("💡 Análisis de Mercado")
+    st.markdown("""
+    * **Acción como gigante:** El género de 'Acción' lidera el volumen de mercado, pero es un entorno de **alta saturación y competencia feroz**.
+    * **Estrategia de Nicho:** Géneros como **RPG, Simulación y Estrategia** no dominan por volumen total, pero son los que poseen la **mejor tasa de aceptación** (fidelidad del usuario). Si eres un estudio independiente, el nicho suele ofrecer un camino más sostenible.
+    """)
+
+with col2:
+    st.subheader("🛠️ Recomendaciones para el Dev")
+    st.markdown("""
+    * **Estándar de Calidad:** La 'Matriz de Oportunidad' demuestra que, en Steam, **la calidad (aceptación > 70%) es el precio de entrada** para cualquier mercado relevante.
+    * **Prioridad Técnica:** Windows es la plataforma indiscutible. La optimización del rendimiento en esta arquitectura no es opcional, es el requisito base para asegurar tu calificación positiva.
+    """)
+
+# Conclusión final destacada
+st.info("""
+### 🚀 Veredicto para el desarrollador:
+El mercado actual no premia simplemente el 'lanzamiento' de un juego, sino la **calidad constante**. Si buscas rentabilidad, prioriza géneros con alta aceptación (RPG/Simulación) y asegúrate de que tu experiencia de usuario sea impecable en Windows. El éxito en Steam ya no depende de la cantidad, sino de la **fidelidad que logres generar en tu nicho.**
+""")
