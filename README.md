@@ -28,4 +28,10 @@ Es fundamental reconocer que los datos presentan sesgos inherentes a la naturale
 - **Lenguaje:** Python
 - **Análisis de datos:** Pandas, NumPy
 - **Visualización:** Plotly, Streamlit
----
+
+## 6. Despliegue
+Este proyecto se encuentra desplegado en la plataforma **Streamlit Community Cloud**, permitiendo la visualización e interacción con los datos en tiempo real sin necesidad de configurar un entorno local.
+
+- **Acceso al Dashboard:** https://steam-analysis-siron.streamlit.app/
+
+*Nota: Para ejecutar la aplicación localmente, clona este repositorio, instala las dependencias mediante `pip install -r requirements.txt` y ejecuta `streamlit run steam_analisys.py`.*
